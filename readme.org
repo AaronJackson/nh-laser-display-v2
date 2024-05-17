@@ -1,0 +1,8 @@
+[[.github/workflows/kicad.yaml]][https://github.com/AaronJackson/nh-laser-display-v2/actions/workflows/kicad.yaml/badge.svg][https://github.com/AaronJackson/nh-laser-display-v2/actions/workflows/kicad.yaml]]
+
+This is an updated version of [[https://github.com/NottingHack/instrumentation-arduino/tree/main/LaserDisplay][LaserDisplay]] for Nottingham Hackspace
+after the previous one failed for a few reasons (Arduino Due issues,
+broken solder joints after a fall, etc). The previous version was on a
+perf board so I decided to make a PCB. I also decided to include a
+WizNet, which I haven't tested yet.
+
