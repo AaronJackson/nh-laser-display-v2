@@ -46,9 +46,6 @@ jobs:
           kicad_pcb: board/board.kicad_pcb
           pcb_drc: true
 
-      - run: echo "${{ steps.drc.outputs.stdout }}"
-      - run: ehco "${{ steps.erc.outputs.stdout }}"
-
       # Upload ERC report only if ERC failed
       - name: Upload ERC report
         uses: actions/upload-artifact@v4
