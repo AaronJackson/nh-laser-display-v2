@@ -18,25 +18,31 @@
 #define OUTPUT(...) _OUTPUT(__VA_ARGS__)
 // Clocking and writing macros
 #define NOP4 NOP; NOP; NOP; NOP
-#define NOPS NOP4; NOP4; NOP4; NOP4;
+#define NOPS NOP4; NOP4; NOP4; 
 #define CLOCK PIN_SET(CLK, HIGH); NOPS; PIN_SET(CLK, LOW); 
 #define WRITE_BIT(bit) PIN_SET(DATA, bit); CLOCK
+#define WRITE_BYTE(bits) for (int i=0; i<8; i++) { WRITE_BIT((bits << i) & 128); } 
 
-#define WIDTH 16 * 12
-#define HEIGHT 16
-#define MQTT_HOST "192.168.0.1"
+#define WIDTH (8*34)
+#define HEIGHT (8*2)
+#define BUF_HEIGHT HEIGHT*4
+// #define MQTT_HOST "192.168.0.1"
+#define MQTT_HOST "10.0.0.4"
 #define MQTT_PORT 1883
 
 #define NOWNEXT "nh/bookings/boxfordlaser/nownext"
 #define DISCORD_RX "nh/discord/rx"
 #define DOORBELL_TOPIC "nh/gk/DoorButton"
+#define LAMPS "nh/StudioDisplay/Lamps"
+#define DEPARTURES "nh/tdb/NOT"
 
-byte mac[] = { 0xA0, 0x3F, 0x9A, 0x86, 0xAF, 0xD3 };
-byte ip[] = {192, 168, 0, 24};
+byte mac[] = { 0xA0, 0x3F, 0x9A, 0x86, 0xAF, 0xD2 };
+// byte ip[] = {192, 168, 0, 24};
+byte ip[] = {10,0,0,99};
 
 void mqtt_callback(char* topic, byte* payload, unsigned int length);
 
-GFXcanvas1 buffer(WIDTH, HEIGHT);
+GFXcanvas1 buffer(WIDTH, BUF_HEIGHT);
 volatile uint8_t* rawBuffer;
 FspTimer timer;
 int row;  // used by drawRowISR
@@ -44,12 +50,15 @@ EthernetClient ethClient;
 PubSubClient mqtt(ethClient);
 unsigned long last_mqtt_poll = 0;
 unsigned long clear_after = 0;
+unsigned long lineOffset = 0;
+volatile byte service = 40;
 
 char nowNextJson[512];
 char discordMessage[4096];
 char discordUsername[64];
 char discordChannel[64];
 char doorbell[32];
+char departures[512];
 
 byte encode_row(byte row) {
   byte enc_row = 0;
@@ -65,22 +74,21 @@ byte encode_row(byte row) {
 
 void drawRowISR(timer_callback_args_t __attribute((unused)) * p_args) {
   volatile uint8_t* ptr;
+  int col;
 
-  byte rowIdx = encode_row(row);
-  for (int i = 0; i < 8; i++) {
-    byte b = (rowIdx << i) & 128;
+  byte encoded_row = encode_row(row);
+  WRITE_BYTE(encoded_row);
+
+  for (col = 0; col < WIDTH; col++) {
+    ptr = &rawBuffer[(col / 8) + row * ((WIDTH + 7) / 8)];
+    byte b = ((*ptr) & (0x80 >> (col & 7))) != 0;
     WRITE_BIT(b);
   }
 
-  for (int col = 0; col < 16 * 12; col++) {
-    if (col >= WIDTH) {
-      WRITE_BIT(0);
-    } else {
-      ptr = &rawBuffer[(col / 8) + row * ((WIDTH + 7) / 8)];
-      byte b = ((*ptr) & (0x80 >> (col & 7))) != 0;
-      WRITE_BIT(b);
-    }
-  }
+  WRITE_BYTE(0x00);
+  WRITE_BYTE(0x00);
+  WRITE_BYTE(service);
+  WRITE_BYTE(encoded_row);
 
   row++;
   if (row == 16) row = 0;
@@ -124,7 +132,7 @@ void checkMqtt() {
   mqtt.setCallback(mqtt_callback);
 
   while (!mqtt.connected()) {
-    String clientId = "LaserDisplay";
+    String clientId = "StudioDisplay";
     clientId += String(random(0xffff), HEX);
 
     if (mqtt.connect(clientId.c_str())) {
@@ -132,9 +140,11 @@ void checkMqtt() {
       mqtt.subscribe(NOWNEXT);
       mqtt.subscribe(DISCORD_RX "/#");
       mqtt.subscribe(DOORBELL_TOPIC);
+      mqtt.subscribe(LAMPS);
+      mqtt.subscribe(DEPARTURES);
 
-      mqtt.publish("nh/discord/tx/pm/asjackson", "LaserDisplay - Restarted");
-      mqtt.publish("nh/irc/tx/pm/asjackson", "LaserDisplay - Restarted");
+      // mqtt.publish("nh/discord/tx/pm/asjackson", "StudioDisplay - Restarted");
+      // mqtt.publish("nh/irc/tx/pm/asjackson", "StudioDisplay - Restarted");
     }
   }
 }
@@ -148,6 +158,7 @@ void setup() {
 
   beginTimer(2000);
 
+  Serial.begin(115200);
   Serial.println("Hello world.");
 
   buffer.setFont(&Font5x7Fixed);
@@ -159,6 +170,7 @@ void setup() {
 
   Ethernet.init();
   Ethernet.begin(mac, ip);
+  // Ethernet.begin(mac);
 
   if (Ethernet.hardwareStatus() == EthernetNoHardware) {
     buffer.print("Ethernet shield was not found.");
@@ -206,19 +218,33 @@ void drawNowNext() {
 
   // buffer.fillRect(0, 0, WIDTH, HEIGHT, 0x00);
   buffer.fillScreen(0x00);
-  buffer.setCursor(0, 7);
+
+  buffer.setTextSize(2);
+  buffer.setCursor(0, 15);
+  buffer.print("LASER:");
+  buffer.setTextSize(1);
+
+  buffer.setCursor(80, 7);
   buffer.print(line1);
-  buffer.setCursor(0, 16);
+  buffer.setCursor(80, 16);
   buffer.print(line2);
 }
 
 void drawDiscord() {
   buffer.fillScreen(0x0000);
-  buffer.setCursor(0, 8);
+  buffer.setCursor(0, 8 - lineOffset);
   buffer.setTextWrap(true);
 
+  if (strlen(discordUsername) == 0) {
+    buffer.setTextSize(2);
+    buffer.setCursor(36, 15);
+    buffer.print("Nottingham Hackspace");
+    buffer.setTextSize(1);
+    return;
+  }
+
   char message[2048];
-  sprintf(message, "%s in %s> %s", discordUsername, discordChannel, discordMessage);
+  sprintf(message, "<%s in #%s> %s", discordUsername, discordChannel, discordMessage);
 
   String _message = String(message);
   _message.replace("😄", ":D");
@@ -228,6 +254,22 @@ void drawDiscord() {
   _message.replace("\n\n", "\n");
 
   buffer.print(_message.c_str());
+
+  bool moreLines = false;
+  for (int x = 0; x < WIDTH && !moreLines; x++) {
+    if (buffer.getPixel(x, 19)) moreLines = true;
+  }
+
+  if (moreLines || (lineOffset % 8) != 0) {
+    if ((lineOffset % 8) == 0)
+      clear_after = micros() + 2.5e6;
+    else
+      clear_after = micros() + 35e3;
+    lineOffset++;
+  } else {
+    if (lineOffset > 0) clear_after = micros() + 4e6;
+    lineOffset = 0;
+  }
 }
 
 void drawDoorbell() {
@@ -238,25 +280,76 @@ void drawDoorbell() {
   buffer.setTextSize(1);
 }
 
+void drawDepartureBoard() {
+  buffer.setTextWrap(false);
+  buffer.fillScreen(0x0000);
+
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, departures);
+
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.f_str());
+    clear_after = 0;
+    return;
+  }
+
+  if (doc.size() == 0) {
+    clear_after = 0;
+    return;
+  }
+
+  for (int d = 0; d < doc.size(); d++) {
+    JsonObject dep = doc[d].as<JsonObject>();
+
+    buffer.setCursor(0, 8 * (d + 1));
+    buffer.print((const char*)dep["std"]);
+
+    buffer.setCursor(30, 8 * (d + 1));
+    buffer.print((const char*)dep["destination"]);
+
+    buffer.setCursor(220, 8 * (d + 1));
+    buffer.print((const char*)dep["platform"]);
+
+    buffer.setCursor(240, 8 * (d + 1));
+    buffer.print((const char*)dep["etd"]);
+  }
+}
+
 void loop() {
   checkMqtt();
 
-  if (micros() - last_mqtt_poll > 1e6) {
+  if (micros() - last_mqtt_poll > 5e5) {
     mqtt.loop();
     last_mqtt_poll = micros(); 
   }
 
   if (micros() > clear_after) {
-    drawNowNext();
-    clear_after = micros() + 600e6;
+    clear_after = micros() + 5e6;
+    drawDiscord();
   }
 }
 
 void mqtt_callback(char* topic, unsigned char* payload, unsigned int length) {
-  if (strcmp(topic, NOWNEXT) == 0) {
+  if (strcmp(topic, NOWNEXT) == 0 && micros() > 20e6) {
     memset(nowNextJson, 0, sizeof nowNextJson);
     strncpy(nowNextJson, (const char*)payload, length);
     drawNowNext();
+    clear_after = micros() + 30e6;
+    return;
+  }
+
+  if (strncmp(topic, LAMPS, strlen(LAMPS)) == 0) {
+    char msg[8];
+    strncpy(msg, (char*)payload, length);
+    service = (int)strtol(msg, NULL, 16);
+  }
+
+  if (strncmp(topic, DEPARTURES, strlen(DEPARTURES)) == 0) {
+    strncpy(departures, (const char*)payload, length);
+    clear_after = micros() + 30e6;
+    drawDepartureBoard();
+    Serial.println(departures);
     return;
   }
 
