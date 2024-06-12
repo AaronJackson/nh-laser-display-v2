@@ -5,6 +5,8 @@
 #include "PubSubClient.h"
 #include <ArduinoJson.h>
 
+#define NAME "LaserDisplay"
+
 #define DATA R_PORT1, 5
 #define CLK R_PORT1, 4
 
@@ -30,6 +32,7 @@
 #define NOWNEXT "nh/bookings/boxfordlaser/nownext"
 #define DISCORD_RX "nh/discord/rx"
 #define DOORBELL_TOPIC "nh/gk/DoorButton"
+#define STATUS_TOPIC "nh/status"
 
 byte mac[] = { 0xA0, 0x3F, 0x9A, 0x86, 0xAF, 0xD3 };
 byte ip[] = {192, 168, 0, 24};
@@ -132,9 +135,10 @@ void checkMqtt() {
       mqtt.subscribe(NOWNEXT);
       mqtt.subscribe(DISCORD_RX "/#");
       mqtt.subscribe(DOORBELL_TOPIC);
+      mqtt.subscribe(STATUS_TOPIC "/req");
 
-      mqtt.publish("nh/discord/tx/pm/asjackson", "LaserDisplay - Restarted");
-      mqtt.publish("nh/irc/tx/pm/asjackson", "LaserDisplay - Restarted");
+      mqtt.publish("nh/discord/tx/pm/asjackson", NAME " - Restarted");
+      mqtt.publish("nh/irc/tx/pm/asjackson", NAME " - Restarted");
     }
   }
 }
@@ -253,6 +257,11 @@ void loop() {
 }
 
 void mqtt_callback(char* topic, unsigned char* payload, unsigned int length) {
+  if (strcmp(topic, STATUS_TOPIC "/req") == 0 && memcmp(payload, "STATUS", length) == 0) {
+    mqtt.publish(STATUS_TOPIC "/res", "Running: " NAME);
+    return;
+  }
+
   if (strcmp(topic, NOWNEXT) == 0) {
     memset(nowNextJson, 0, sizeof nowNextJson);
     strncpy(nowNextJson, (const char*)payload, length);
