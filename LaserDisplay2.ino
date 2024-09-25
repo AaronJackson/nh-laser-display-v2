@@ -383,6 +383,7 @@ void mqtt_callback(char* topic, unsigned char* payload, unsigned int length) {
   }
 
   if (strncmp(topic, DOORBELL_TOPIC, strlen(DOORBELL_TOPIC)) == 0) {
+    memset(doorbell, 0, sizeof doorbell);
     strncpy(doorbell, (const char*)payload, length);
     clear_after = micros() + 10e6;
     drawDoorbell();
