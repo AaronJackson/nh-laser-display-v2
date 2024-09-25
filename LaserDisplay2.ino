@@ -8,7 +8,7 @@
 #define DATA R_PORT1, 5
 #define CLK R_PORT1, 4
 
-#define NAME "StudioDisplay"
+#define NAME "ElectronicsDisplay"
 
 // NOP to skip a cycle
 #define NOP __asm__("nop")
@@ -27,7 +27,7 @@
 
 #define WIDTH (8*34)
 #define HEIGHT (8*2)
-#define BUF_HEIGHT HEIGHT*4
+#define BUF_HEIGHT HEIGHT*4x`
 // #define MQTT_HOST "192.168.0.1"
 #define MQTT_HOST "10.0.0.4"
 #define MQTT_PORT 1883
@@ -35,13 +35,13 @@
 #define NOWNEXT "nh/bookings/boxfordlaser/nownext"
 #define DISCORD_RX "nh/discord/rx"
 #define DOORBELL_TOPIC "nh/gk/DoorButton"
-#define LAMPS "nh/StudioDisplay/Lamps"
+#define LAMPS "nh/ElectronicsDisplay/Lamps"
 #define DEPARTURES "nh/tdb/NOT"
 #define STATUS_TOPIC "nh/status"
 
-byte mac[] = { 0xA0, 0x3F, 0x9A, 0x86, 0xAF, 0xD2 };
+byte mac[] = { 0xA0, 0x3F, 0x9A, 0x86, 0xAF, 0xD9 };
 // byte ip[] = {192, 168, 0, 24};
-byte ip[] = {10,0,0,99};
+byte ip[] = {10,0,0,31};
 
 void mqtt_callback(char* topic, byte* payload, unsigned int length);
 
@@ -383,6 +383,7 @@ void mqtt_callback(char* topic, unsigned char* payload, unsigned int length) {
   }
 
   if (strncmp(topic, DOORBELL_TOPIC, strlen(DOORBELL_TOPIC)) == 0) {
+    memset(doorbell, 0, sizeof doorbell);
     strncpy(doorbell, (const char*)payload, length);
     clear_after = micros() + 10e6;
     drawDoorbell();
