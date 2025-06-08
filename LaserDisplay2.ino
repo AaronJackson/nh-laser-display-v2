@@ -4,6 +4,8 @@
 #include "Ethernet.h"
 #include "PubSubClient.h"
 #include <ArduinoJson.h>
+#include "OneWire.h"
+#include "DallasTemperature.h"
 
 #define NAME "LaserDisplay"
 
@@ -21,7 +23,7 @@
 // Clocking and writing macros
 #define NOP4 NOP; NOP; NOP; NOP
 #define NOPS NOP4; NOP4; NOP4; NOP4;
-#define CLOCK PIN_SET(CLK, HIGH); NOPS; PIN_SET(CLK, LOW); 
+#define CLOCK PIN_SET(CLK, HIGH); NOPS; NOPS; PIN_SET(CLK, LOW);
 #define WRITE_BIT(bit) PIN_SET(DATA, bit); CLOCK
 
 #define WIDTH 16 * 12
@@ -33,6 +35,13 @@
 #define DISCORD_RX "nh/discord/rx"
 #define DOORBELL_TOPIC "nh/gk/DoorButton"
 #define STATUS_TOPIC "nh/status"
+#define TEMP_TOPIC "nh/temp"
+
+#define TEMP_ID "9999000000000001"
+OneWire oneWire(5);
+DallasTemperature sensors(&oneWire);
+unsigned long last_temp_poll = 0;
+float last_temp = 0;
 
 byte mac[] = { 0xA0, 0x3F, 0x9A, 0x86, 0xAF, 0xD3 };
 byte ip[] = {192, 168, 0, 24};
@@ -146,12 +155,13 @@ void checkMqtt() {
 void setup() {
   OUTPUT(DATA);
   OUTPUT(CLK);
-
+  
   rawBuffer = buffer.getBuffer();
   row = 0;
 
   beginTimer(2000);
 
+  Serial.begin(115200);
   Serial.println("Hello world.");
 
   buffer.setFont(&Font5x7Fixed);
@@ -161,7 +171,9 @@ void setup() {
   buffer.setCursor(0, 7);
   buffer.print("LaserDisplay v2");
 
-  Ethernet.init();
+  sensors.begin();
+
+  //Ethernet.init();
   Ethernet.begin(mac, ip);
 
   if (Ethernet.hardwareStatus() == EthernetNoHardware) {
@@ -175,9 +187,10 @@ void setup() {
     Serial.print("Ethernet hardwareStatus() unknown.");
   }
 
-  delay(300);
+  delay(1000);
   buffer.fillRect(0, 8, WIDTH, 16, 0x00);
   buffer.setCursor(0, 16);
+
   buffer.print(Ethernet.localIP());
   Serial.println(Ethernet.localIP());
 
@@ -214,6 +227,13 @@ void drawNowNext() {
   buffer.print(line1);
   buffer.setCursor(0, 16);
   buffer.print(line2);
+
+  char temperature[10];
+  sprintf(temperature, "%.2f c", last_temp);
+  buffer.setCursor(155, 7);
+  buffer.print("Chiller:");
+  buffer.setCursor(160, 16);
+  buffer.print(temperature);
 }
 
 void drawDiscord() {
@@ -252,7 +272,17 @@ void loop() {
 
   if (micros() > clear_after) {
     drawNowNext();
-    clear_after = micros() + 600e6;
+    clear_after = micros() + 10e6;
+  }
+
+  if (micros() - last_temp_poll > 15e6) {
+    sensors.requestTemperatures();
+    last_temp = sensors.getTempCByIndex(0);
+    Serial.println(last_temp);
+    char stemp[24];
+    snprintf(stemp, sizeof(stemp), "%s:%.2f", TEMP_ID, last_temp);
+    mqtt.publish(TEMP_TOPIC, stemp);
+    last_temp_poll = micros();
   }
 }
 
