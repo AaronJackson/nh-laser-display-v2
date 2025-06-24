@@ -38,6 +38,7 @@
 #define LAMPS "nh/StudioDisplay/Lamps"
 #define DEPARTURES "nh/tdb/NOT"
 #define STATUS_TOPIC "nh/status"
+#define RADIATION_TOPIC "nh/radiation/Studio"
 
 byte mac[] = { 0xA0, 0x3F, 0x9A, 0x86, 0xAF, 0xD2 };
 // byte ip[] = {192, 168, 0, 24};
@@ -55,6 +56,8 @@ unsigned long last_mqtt_poll = 0;
 unsigned long clear_after = 0;
 unsigned long lineOffset = 0;
 volatile byte service = 40;
+unsigned long cpmTimer = 0;
+volatile int cpmClicks = 0;
 
 char nowNextJson[512];
 char discordMessage[4096];
@@ -195,6 +198,12 @@ void setup() {
 
   delay(300);
   checkMqtt();
+
+  attachInterrupt(digitalPinToInterrupt(8), cpmIncr, RISING);
+}
+
+void cpmIncr() {
+  cpmClicks++;
 }
 
 void drawNowNext() {
@@ -332,6 +341,16 @@ void loop() {
     clear_after = micros() + 5e6;
     drawDiscord();
   }
+
+  if (millis() - cpmTimer > 60e3) {
+    char cpmString[6];
+    sprintf(cpmString, "%d", cpmClicks);
+    cpmClicks = 0;
+    Serial.println(cpmString);
+    mqtt.publish(RADIATION_TOPIC, cpmString);
+    cpmTimer = millis();
+  }
+
 }
 
 void mqtt_callback(char* topic, unsigned char* payload, unsigned int length) {
